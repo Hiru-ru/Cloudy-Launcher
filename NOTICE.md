@@ -21,12 +21,23 @@
 | PyInstaller | 6.22 | GPL v2 或更高版本，附特殊例外条款 | PyInstaller Development Team，https://pyinstaller.org |
 | Pillow（PIL） | 13.0 | HPND（历史 MIT/X 风格宽松许可） | 各贡献者，https://python-pillow.org |
 
-## 三、随程序分发的素材（`cloud_launcher/resources/`）
+## 三、随程序分发的素材
+
+### （一）云朵启动器（`cloud_launcher/resources/`）
 
 1. **方块等距渲染图 13 张（`resources/blocks/*.png`）**：由公开渲染服务 **blockrender.dev** 生成（https://blockrender.dev）。这些渲染图基于 **Minecraft（我的世界）** 游戏内模型与纹理制作，底层纹理版权归 **Mojang Synergies AB / Microsoft** 所有。依据 blockrender.dev 的说明，该类渲染图可用于粉丝站点、插件页面等非官方用途，但不得冒充官方 Minecraft 产品。
 2. **原版角色皮肤 Steve / Alex（`resources/skins/steve.png`、`alex.png`）**：从 Mojang 官方分发的 Minecraft 1.12.2 客户端 jar 中提取的游戏内置纹理，版权归 **Mojang Synergies AB / Microsoft** 所有。
 3. **品牌 Logo 与应用图标（`resources/cloud_logo.png`、`resources/app_icon.ico`）**：由作者本人提供的参考图处理生成，版权归本项目作者所有。
 4. **左侧导航图标 5 张（`resources/icons/*.png`）**：由作者使用 AI 工具生成的图片处理而成，不涉及第三方图标库素材；其使用以对应 AI 工具的生成内容服务条款为准。
+
+### （二）云朵桌宠（`desktop_pet/resources/`）
+
+下列素材随独立桌宠程序分发。除应用图标外，均为从 Minecraft 客户端提取的游戏内置纹理，版权归 **Mojang Synergies AB / Microsoft** 所有，仅用于非商业的爱好者用途，不冒充官方 Minecraft 产品：
+
+1. **原版角色皮肤（`resources/steve.png`）**：Minecraft 游戏内置 Steve 皮肤纹理。
+2. **物品纹理 5 张（`resources/items/`）**：`bone.png`（骨头）、`raw_beef.png`（生牛肉）、`cooked_beef.png`（熟牛肉）、`raw_porkchop.png`（生猪排）、`cooked_porkchop.png`（熟猪排），均为 Minecraft 游戏内置物品纹理。
+3. **狼（驯服狗）实体纹理 3 张（`resources/entity/wolf/`）**：`wolf.png`、`wolf_tame.png`、`wolf_collar.png`，均为 Minecraft 游戏内置实体纹理。
+4. **应用图标（`resources/app_icon.ico`）**：与启动器同源，由作者本人提供，版权归本项目作者所有。
 
 ## 四、商标与免责声明
 
