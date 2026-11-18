@@ -1,0 +1,16 @@
+# 文本文件仓库内一律 LF（Windows 批处理保留 CRLF）
+* text=auto eol=lf
+*.bat text eol=crlf
+
+# 二进制资源不做换行 / diff 转换
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ogg binary
+*.mp3 binary
+*.wav binary
+*.flac binary
+*.otf binary
+*.ttf binary

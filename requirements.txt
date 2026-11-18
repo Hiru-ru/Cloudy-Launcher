@@ -1,0 +1,5 @@
+# 云朵启动器 v1.2.12.16 运行时依赖
+PySide6==6.12.0
+
+# 仅在重新生成内置 Logo / 图标（tools/make_assets.py）时需要：
+# Pillow==13.0.0

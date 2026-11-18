@@ -1,0 +1,35 @@
+# ---- Python 缓存 ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- 运行数据（程序在这些目录生成，不入库）----
+CLY/
+yd/
+.minecraft/
+music/
+wallpaper/
+config.json
+*.log
+
+# ---- PyInstaller 构建产物 ----
+build/
+build_pet/
+dist/
+dist_pet/
+build_out/
+build_work/
+
+# ---- 打包分发产物（exe/压缩包不入库）----
+*.exe
+*.zip
+*.7z
+*.rar
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini
