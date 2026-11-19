@@ -165,7 +165,7 @@ project and is not affiliated with or endorsed by Mojang or Microsoft.
 ## Links
 
 - GitHub repository: <https://github.com/Hiru-ru/Cloudy-Launcher>
-- Release v1.1.0: <https://github.com/Hiru-ru/Cloudy-Launcher/releases/tag/v1.1.0>
+- Release v1.2.0 (latest): <https://github.com/Hiru-ru/Cloudy-Launcher/releases/tag/v1.2.0>
 - Quark drive (Chinese page): <https://pan.quark.cn/s/4aa803618cd0> — code `Xr9h`
 - Baidu drive (Chinese page): <https://pan.baidu.com/s/1IMLRJI02QDNStaO479wetw?pwd=426e> — code `426e`
 - AFDiAn support page (Chinese): <https://ifdian.net/a/stfluogea>
