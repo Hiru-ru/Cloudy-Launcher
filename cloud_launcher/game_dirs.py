@@ -374,7 +374,90 @@ def local_version_base(alias: str) -> str:
     inherits = str(data.get("inheritsFrom") or "").strip()
     if inherits:
         return inherits
+    # 自包含的现代 Forge/NeoForge profile 无 inheritsFrom：从加载器坐标的 MC 前缀取
+    # 底座版本，坐标形如 net.minecraftforge:forge:1.16.5-36.2.39。
+    for lib in data.get("libraries") or []:
+        name = lib.get("name") if isinstance(lib, dict) else ""
+        parts = str(name).split(":")
+        if (len(parts) >= 3 and parts[0] in ("net.minecraftforge", "net.neoforged")
+                and parts[1] in ("forge", "neoforge") and "-" in parts[2]):
+            base = parts[2].split("-", 1)[0].strip()
+            if base:
+                return base
     return str(data.get("id") or "").strip()
+
+
+def _load_version_json(alias: str) -> dict | None:
+    """定位并读取版本 JSON（兼容标准命名与目录内回退），异常返回 None。"""
+    directory = version_dir(alias)
+    safe = sanitize_version_id(alias)
+    json_path = os.path.join(directory, C.VERSION_JSON_FILENAME.format(id=safe))
+    if not os.path.isfile(json_path):
+        try:
+            candidates = [os.path.join(directory, n)
+                          for n in os.listdir(directory) if n.endswith(".json")]
+        except OSError:
+            return None
+        if not candidates:
+            return None
+        json_path = candidates[0]
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def detect_local_loader(alias: str) -> tuple[str, str]:
+    """从本地版本 JSON 推断第三方加载器（无 install_meta 时的兜底）。
+
+    外部启动器 / 手动放入的版本没有云朵 install_meta.json，需要直接从版本 JSON 的
+    库坐标与 mainClass 识别 Forge / NeoForge / Fabric / OptiFine，避免把带大量 mod
+    的整合包误标为「原版」。返回 ``(loader_key, loader_version)``，无法识别时返回
+    ``(LOADER_VANILLA, "")``。
+    """
+    data = _load_version_json(alias)
+    if data is None:
+        return C.LOADER_VANILLA, ""
+
+    coords = []
+    for lib in data.get("libraries") or []:
+        name = lib.get("name") if isinstance(lib, dict) else ""
+        if name:
+            coords.append(str(name).lower())
+    coord_text = "|".join(coords)
+    main_class = str(data.get("mainClass") or "").lower()
+
+    def lib_version(group_artifact: str) -> str:
+        prefix = group_artifact + ":"
+        for coord in coords:
+            if coord.startswith(prefix):
+                parts = coord.split(":")
+                if len(parts) >= 3:
+                    return parts[2]
+        return ""
+
+    # Fabric：库坐标 net.fabricmc:fabric-loader 或 Knot 主类。
+    if "net.fabricmc:fabric-loader" in coord_text or "knot" in main_class:
+        return C.LOADER_FABRIC, lib_version("net.fabricmc:fabric-loader")
+    # NeoForge：库坐标 net.neoforged:neoforge 或 FML 主类。
+    if "net.neoforged:neoforge" in coord_text or "net.neoforged.fml" in main_class:
+        return C.LOADER_NEOFORGE, lib_version("net.neoforged:neoforge")
+    # OptiFine：主类或坐标含 optifine。
+    if "optifine" in main_class or "optifine" in coord_text:
+        return C.LOADER_OPTIFINE, lib_version("net.optifine:optifine")
+    # Forge：modlauncher / launchwrapper 主类，或 net.minecraftforge:forge 坐标。
+    if ("net.minecraftforge:forge" in coord_text
+            or "modlauncher" in main_class
+            or "launchwrapper" in main_class
+            or "minecraftforge" in coord_text):
+        ver = lib_version("net.minecraftforge:forge")
+        # 新版坐标版本形如 1.16.5-36.2.39，取加载器部分（短横线后）。
+        if "-" in ver:
+            ver = ver.split("-", 1)[1]
+        return C.LOADER_FORGE, ver
+    return C.LOADER_VANILLA, ""
 
 
 def scan_installed_entries() -> list[dict]:
@@ -415,8 +498,13 @@ def scan_installed_entries() -> list[dict]:
             or local_version_base(name)
             or json_id
             or name)
-        loader = str(meta.get("loader") or C.LOADER_VANILLA)
+        loader = str(meta.get("loader") or "")
         loader_version = str(meta.get("loader_version") or "")
+        if not loader:
+            # 外部版本无云朵 install_meta：从版本 JSON 推断真实加载器，避免误标原版。
+            loader, detected_ver = detect_local_loader(name)
+            if not loader_version:
+                loader_version = detected_ver
         result.append({
             "alias": name,
             "mc_version": mc_version,

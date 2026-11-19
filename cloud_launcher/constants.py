@@ -183,10 +183,11 @@ APP_FULL_NAME = "Cloudy Launcher"
 # HTTP 请求头 User-Agent 必须是纯 ASCII（urllib 按 latin-1 编码请求头，非 ASCII 会直接抛
 # UnicodeEncodeError）；对外网络标识与显示名分开，认证 / 下载统一引用本常量。
 APP_UA_NAME = "CloudyLauncher"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 APP_VERSION_TAG = f"v{APP_VERSION}"
-# 发布阶段：正式版采用三段版本号（主.次.修订）；此前四段号（主.次.功能.修复）为
-# 内部测试版。AI 助手保持入口，正式版发布后再持续打磨。
+# 发布阶段：正式版采用三段版本号（主.次.修复）；此前的四段号为内部测试版。
+# 1.2.0：新增小云 AI 本地翻译接入（版本设置高级功能 AI 翻译），并修复外部整合包
+# 加载器识别、Java 自动选择与下载等问题。
 APP_STAGE = "正式版"
 # 标题栏 / 窗口标题只显示英文全名，不再拼接版本号；版本号仅在关于页展示。
 APP_DISPLAY_NAME = APP_FULL_NAME
@@ -196,15 +197,22 @@ ABOUT_VERSION_LABEL = f"Version {APP_VERSION}"
 AUTHOR_QQ = "2756141828"
 # 关于页「本版本介绍」要点（中文条目，随版本更新同步改写）。
 ABOUT_RELEASE_NOTES = [
-    '首个正式版：云朵启动器与云朵桌宠统一发布正式版 1.1.0（此前的四段版本号为内部测试版，正式版改用三段版本号）；内置 AI 助手入口保留，将在正式版发布后持续打磨。',
-    '游戏下载与启动：支持原版游戏、Mod、整合包、光影包、资源包、数据包分类搜索与下载，正版 / 离线账号、版本隔离、多线程加速下载，自动探测本机 Java 并拉起游戏。',
-    '整合包导入导出：支持 CurseForge、MultiMC/Prism、MCBBS 及本地文件导入，并可导出为离线完整包、Modrinth .mrpack、MultiMC/Prism、CurseForge、MCBBS 五种格式。',
-    '个性化与皮肤：可自定义 Logo、显示名称、壁纸与毛玻璃主题；皮肤支持正版账号自动使用正版皮肤、离线账号导入本地皮肤，内置史蒂夫 / 艾利克斯。',
-    '桌宠陪伴：独立桌宠 APP，3D 角色头部跟随鼠标，空闲随机挥手、拍手、吃东西、跳跃、欢呼、打哈欠、跳舞、摸小狗等动作，带饥饿值、头顶对话气泡与爱心 / 音符 / 问号 / Zzz 情绪粒子，鼠标一动立刻恢复正常。',
-    '桌宠小狗：驯服狼会随机进场陪伴，可喂狗、摸狗，具备走路、摇尾、开心、被摸等动画，陪伴一段时间后自动退场。',
-    '桌宠困倦睡眠：长时间空闲会先打哈欠、随后趴下入睡并周期冒 Zzz，鼠标一动立刻醒来。',
-    '功能开关：「设置 · 桌宠」页可一键全部开启 / 全部关闭，也能单独控制空闲小动作、悬停喂食菜单、饥饿值、小狗陪伴、困倦睡觉五项，默认全部开启；开关只做在启动器里，桌宠本身不放置任何设置入口。',
+    '小云 AI 本地汉化：配合独立「小云 AI」程序，扫描 mod / 整合包内的英文语言文件，用本地 AI 模型翻译成简体中文，生成可在游戏内启用的汉化资源包；已有中文自动跳过，可随时取消，全程标注机器翻译免责。',
+    '加载器识别：正确识别 Forge / NeoForge / Fabric / OptiFine 及其版本，并解析真实 MC 版本，外部整合包不再被误标为「原版」。',
+    'Java 智能选择与自动下载：按游戏版本所需的 Java 主版本精确匹配，本机缺少时弹窗询问是否自动下载，国内用清华、华为镜像、国外用 Adoptium 源，智能切换。',
+    '游戏下载与启动：支持原版游戏、Mod、整合包、光影包、资源包、数据包分类搜索与多线程下载，正版 / 离线账号、版本隔离，自动探测 Java 并拉起游戏。',
+    '整合包导入导出：支持 CurseForge、MultiMC / Prism、MCBBS、本地文件及 .mrpack 导入，并可导出为多种格式。',
+    '个性化与皮肤：可自定义 Logo、显示名称、壁纸与毛玻璃主题；正版皮肤自动同步，离线可导入本地皮肤。',
+    '桌宠陪伴：独立桌宠程序，3D 角色头部跟随鼠标，带空闲动作、情绪粒子与可喂可摸的小狗，长时间空闲会自动入睡。',
     '问题反馈：使用中遇到任何问题或 Bug，可在「问题反馈」卡查看作者 QQ 并联系作者。',
+]
+
+# 关于页小字体致谢：小云 AI 本地翻译所使用的模型与开源团队（字号小于正文，低调列出）。
+ACK_TITLE = "致谢"
+ACK_NOTES = [
+    '特别感谢 DeepSeek 大模型，以及 DeepSeek 团队的开源贡献。',
+    '小云 AI 所用模型为 DeepSeek-R1-Distill-Qwen-1.5B（MIT），基座 Qwen2.5（Apache 2.0），本地推理引擎 llama.cpp（MIT）。',
+    'AI 机器翻译，可能存在不准确，仅供参考。',
 ]
 
 # 窗口默认尺寸（1.1.1.3 起在 1.1.1.2 基础上整体放大）
@@ -770,10 +778,32 @@ JAVA_SEARCH_DIRS = (
     r"C:\Program Files\Java",
     r"C:\Program Files (x86)\Java",
     r"C:\Program Files\Eclipse Adoptium",
-    r"C:\Program Files\Microsoft\jdk",
+    # 注意：Microsoft 目录下是 jdk-25.0.4.7-hotspot 等带版本号的子目录，旧的写死
+    # “Microsoft\jdk” 会漏扫，改为扫描整个 Microsoft 目录再逐个 -version 校验。
+    r"C:\Program Files\Microsoft",
     r"C:\Program Files\Amazon Corretto",
     r"C:\Program Files\Zulu",
     r"C:\Program Files\BellSoft",
+    # Android Studio 自带的 JDK（jdk-17.0.2 等）。
+    r"%USERPROFILE%\Android",
+)
+# 官方启动器风格的 Java 缓存：目录下每个子目录名即主版本号（17 / 21），其内含 bin/java.exe。
+# 用 %USERPROFILE% 占位，运行时由 java_runtime 展开，避免硬编码用户名。
+JAVA_CACHE_DIRS = (
+    r"%USERPROFILE%\.minecraft\cache\java",
+)
+# 云朵自动下载的 Java 运行时根目录（相对数据目录 CLY）：CLY\runtime\java\<主版本号>\。
+JAVA_RUNTIME_DIR_NAME = r"runtime\java"
+
+# ---- v1.4.5.1：Java 自动下载源（探针实测，2026-11-19）----
+# 镜像目录结构：<根>/<主版本>/jre/x64/windows/OpenJDK<主版本>U-jre_x64_windows_hotspot_*.zip。
+# 清华目录页原始 HTML 含具体 zip 文件名，可直接正则解析；华为目录页是 JS 单页、文件名异步
+# 加载，故复用清华解析出的同名文件（两镜像同步同一套 Adoptium 产物，已实测同名 200）。
+TUNA_ADOPTIUM_BASE = "https://mirrors.tuna.tsinghua.edu.cn/Adoptium"
+HUAWEI_ADOPTIUM_BASE = "https://mirrors.huaweicloud.com/adoptium"
+# 国外标准源：Adoptium latest API 直接 307 重定向到最新 JRE zip，无需解析文件名。
+ADOPTIUM_LATEST_API = (
+    "https://api.adoptium.net/v3/binary/latest/{major}/ga/windows/x64/jre/hotspot/normal/eclipse"
 )
 # 启动失败 / 缺失 Java 时的引导提示文案。
 JAVA_MISSING_TITLE = "未检测到 Java 运行环境"
@@ -789,6 +819,31 @@ JAVA_VERSION_LOW_MESSAGE = (
     "这个游戏版本需要 Java {required}，当前检测到的 Java 是 {current}。\n"
     "当前 Java 路径：{path}\n"
     "请安装 Java {required} 或更高版本后重新启动游戏。"
+)
+# v1.4.5.1：缺对应版本时，弹窗询问是否由启动器自动下载（同意 / 不同意）。
+JAVA_DOWNLOAD_ASK_TITLE = "缺少 Java {major}"
+JAVA_DOWNLOAD_ASK_MESSAGE = (
+    "这个游戏版本需要 Java {major}，但本机没有找到对应版本。\n"
+    "是否同意自动下载并安装 Java {major} 运行环境？\n"
+    "（国内网络将从清华、华为等镜像源下载，国外网络自动切换到 Adoptium 标准源）"
+)
+# 弹窗按钮用中文（标准 Yes/No 会显示英文），不用标准按钮枚举。
+JAVA_DOWNLOAD_CONFIRM_TEXT = "是，下载"
+JAVA_DOWNLOAD_REJECT_TEXT = "不下载"
+# 信息提示框的单按钮也用中文（标准 OK 会显示英文）。
+JAVA_DIALOG_OK_TEXT = "确定"
+# 不同意自动下载时，引导用户自行安装。
+JAVA_MANUAL_INSTALL_MESSAGE = (
+    "请自行下载安装 Java {major}（建议选择 Temurin / Adoptium 的 JRE，Windows x64 版本）。\n"
+    "安装完成后，可在「设置」里手动指定 java.exe，或直接回到启动页重新开始游戏。"
+)
+# 下载 / 解压阶段的进度文案与失败提示。
+JAVA_DOWNLOADING_TEXT = "正在下载 Java {major}…"
+JAVA_EXTRACTING_TEXT = "正在解压安装 Java {major}…"
+JAVA_DOWNLOAD_FAILED_TITLE = "Java 下载失败"
+JAVA_DOWNLOAD_FAILED_MESSAGE = (
+    "Java {major} 自动下载或安装失败：{error}\n"
+    "请检查网络后重试，或选择自行安装 Java {major}。"
 )
 # JVM 内存默认值（MB）；由启动命令组装层使用。
 DEFAULT_JVM_XMX_MB = 2048
@@ -819,6 +874,9 @@ COLOR_CLEAR_BORDER_RGBA = (255, 255, 255, 160)
 # 普通档：不透明白片 + 浅灰描边。
 COLOR_NORMAL_PANEL_RGBA = (255, 255, 255, 255)
 COLOR_NORMAL_BORDER_RGBA = (214, 226, 236, 255)
+
+# 小云 AI 机器翻译免责声明：所有译文与资源包描述统一标注。
+TRANSLATION_DISCLAIMER = "AI 机器翻译，可能存在不准确，仅供参考。"
 
 # ---- 七色染色盘（红橙黄绿青蓝紫）；空串表示不染色 ----
 TINT_NONE = ""

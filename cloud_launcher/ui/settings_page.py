@@ -78,7 +78,7 @@ from .card_widget import Card
 from .frosted_backdrop import backdrop, cover_rect
 from .launch_settings_page import LaunchSettingsPage
 from .pet_settings_page import PetSettingsPage
-from .placeholder_page import PlaceholderPage
+from .ai_settings_page import AiSettingsPage
 
 
 # ---------------------------------------------------------------------------
@@ -969,10 +969,8 @@ class SettingsPage(QWidget):
         # 桌宠：独立 APP 导入 + 皮肤口径 + 启停；host 为 MainWindow（需访问 session）。
         self.pet_page = PetSettingsPage(config, host)
         self.stack.addWidget(self.pet_page)
-        self.ai_placeholder = PlaceholderPage(
-            "AI", "AI相关设置将在后续版本接入，本轮仅保留页面骨架。"
-        )
-        self.stack.addWidget(self.ai_placeholder)
+        self.ai_page = AiSettingsPage(config, host)
+        self.stack.addWidget(self.ai_page)
         root.addWidget(self.stack, 1)
 
         first_btn = self._tab_buttons["personalization"]

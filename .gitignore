@@ -17,10 +17,14 @@ config.json
 # ---- PyInstaller 构建产物 ----
 build/
 build_pet/
+build_ai/
 dist/
 dist_pet/
 build_out/
 build_work/
+
+# ---- 小云 AI 内置模型与引擎（构建前放入，约 1GB，不入库）----
+bundled/
 
 # ---- 打包分发产物（exe/压缩包不入库）----
 *.exe

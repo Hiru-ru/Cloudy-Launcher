@@ -68,6 +68,7 @@ v1.2.5.1：本页由主窗口挂到「启动」导航、作为程序启动后的
 计时；真实 Minecraft 进程接入后按会话结算时长。开始游戏按钮、3D 角色预览、离线 /
 正版分段按钮与加载进度条外观保持不变。
 """
+import json
 import random
 from datetime import date
 
@@ -86,6 +87,7 @@ from PySide6.QtWidgets import (
 
 from .. import constants as C
 from .. import game_dirs
+from .. import java_runtime
 from ..account_session import AccountSession
 from ..account_store import AccountStore
 from ..config_store import ConfigStore
@@ -93,7 +95,7 @@ from ..version_launch_config import VersionLaunchConfig
 from .card_widget import Card
 from .capsule_progress_bar import CapsuleProgressBar
 from .appearance import appearance
-from .launch_worker import LaunchWorker
+from .launch_worker import JavaDownloadWorker, LaunchWorker
 from .skin_fetch_worker import SkinFetchWorker
 from .skin_preview import SkinPreview
 from .spring_button import SpringPushButton
@@ -233,6 +235,9 @@ class ProfilePage(QWidget):
         self._progress = 0
         self._version_entries: list[dict] = []
         self._skin_worker: SkinFetchWorker | None = None
+        self._launch_worker: LaunchWorker | None = None
+        self._java_download_worker: JavaDownloadWorker | None = None
+        self._pending_alias = ""
         # 关闭阶段置位：禁止再启动新的皮肤下载线程，并等待在途线程收尾，避免子控件随主
         # 窗口析构时把运行中的 QThread 一并销毁而触发 0xC0000409。
         self._shutting_down = False
@@ -745,6 +750,14 @@ class ProfilePage(QWidget):
             self._skin_worker.requestInterruption()
             self._skin_worker.wait(int(C.SKIN_FETCH_TIMEOUT * 1000) + 2000)
 
+        # 下载 / 启动线程同样要在窗口关闭前收尾，避免 QThread 随父控件销毁而原生崩溃。
+        for worker in (self._java_download_worker, self._launch_worker):
+            if worker is not None and worker.isRunning():
+                if hasattr(worker, "cancel"):
+                    worker.cancel()
+                worker.requestInterruption()
+                worker.wait(5000)
+
     # ---------- 真实启动游戏（后台线程：Java 探测 + 命令组装 + 进程拉起 + 存活监控） ----------
     def _on_launch_clicked(self) -> None:
         if self._loading:
@@ -757,6 +770,48 @@ class ProfilePage(QWidget):
             )
             return
 
+        # 前置读取 profile，并按所需主版本选择 Java（弹窗必须在主线程，故放到这里）。
+        profile_path = game_dirs.version_json_path(alias)
+        try:
+            with open(profile_path, "r", encoding="utf-8") as f:
+                profile = json.load(f)
+        except Exception:
+            QMessageBox.warning(self, C.APP_FULL_NAME, "该版本文件损坏，请重新下载该版本。")
+            return
+
+        selection = java_runtime.select_java(profile, self.config.java_path)
+        if selection.get("status") == "ready":
+            self._begin_launch(alias, str(selection["path"]))
+            return
+
+        # 缺对应版本：弹窗询问是否自动下载（用中文按钮，标准 Yes/No 会显示英文）。
+        required = int(selection.get("required") or 0)
+        ask_box = QMessageBox(self)
+        ask_box.setWindowTitle(C.JAVA_DOWNLOAD_ASK_TITLE.format(major=required))
+        ask_box.setText(C.JAVA_DOWNLOAD_ASK_MESSAGE.format(major=required))
+        confirm_btn = ask_box.addButton(
+            C.JAVA_DOWNLOAD_CONFIRM_TEXT, QMessageBox.ButtonRole.AcceptRole
+        )
+        reject_btn = ask_box.addButton(
+            C.JAVA_DOWNLOAD_REJECT_TEXT, QMessageBox.ButtonRole.RejectRole
+        )
+        ask_box.setDefaultButton(confirm_btn)
+        ask_box.exec()
+        if ask_box.clickedButton() is not confirm_btn:
+            # 不同意自动下载：引导自行安装，不进入 loading 状态。
+            guide_box = QMessageBox(self)
+            guide_box.setWindowTitle(C.APP_FULL_NAME)
+            guide_box.setText(C.JAVA_MANUAL_INSTALL_MESSAGE.format(major=required))
+            guide_box.setIcon(QMessageBox.Icon.Information)
+            guide_box.addButton(
+                C.JAVA_DIALOG_OK_TEXT, QMessageBox.ButtonRole.AcceptRole
+            )
+            guide_box.exec()
+            return
+        self._begin_java_download(alias, required)
+
+    def _begin_launch(self, alias: str, java_path: str) -> None:
+        """进入 loading 状态并启动游戏后台线程（传入已选好的 Java 路径）。"""
         self._loading = True
         self.launch_button.setEnabled(False)
         self.launch_button.setText("启动中…")
@@ -766,11 +821,68 @@ class ProfilePage(QWidget):
         # 后台线程执行完整启动链路，避免阻塞界面；phase 信号实时回传真实阶段。
         # v1.3.21.0：传入该版本独立的启动配置（覆盖 + 默认兜底），不再直接用全局 config。
         launch_cfg = VersionLaunchConfig(self.config, alias)
-        self._launch_worker = LaunchWorker(alias, self.session, launch_cfg, self)
+        self._launch_worker = LaunchWorker(
+            alias, self.session, launch_cfg, self, preset_java_path=java_path
+        )
         self._launch_worker.phase.connect(self._on_launch_phase)
         self._launch_worker.succeeded.connect(self._on_launch_succeeded)
         self._launch_worker.failed.connect(self._launch_failed)
         self._launch_worker.start()
+
+    def _begin_java_download(self, alias: str, major: int) -> None:
+        """进入下载状态，后台下载并安装所需主版本的 Java。"""
+        self._loading = True
+        self._pending_alias = alias
+        self.launch_button.setEnabled(False)
+        self.launch_button.setText("下载中…")
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat(C.JAVA_DOWNLOADING_TEXT.format(major=major))
+
+        self._java_download_worker = JavaDownloadWorker(major, self)
+        self._java_download_worker.progress.connect(self._on_java_download_progress)
+        self._java_download_worker.phase.connect(self._on_java_phase)
+        self._java_download_worker.succeeded.connect(self._on_java_downloaded)
+        self._java_download_worker.failed.connect(self._on_java_download_failed)
+        self._java_download_worker.start()
+
+    def _on_java_download_progress(self, percent: int, text: str) -> None:
+        self.progress_bar.setValue(percent)
+        self.progress_bar.setFormat(text)
+
+    def _on_java_phase(self, text: str) -> None:
+        self.progress_bar.setFormat(text)
+
+    def _on_java_downloaded(self, java_path: str) -> None:
+        """Java 安装完成：用新 Java 继续启动游戏。"""
+        alias = self._pending_alias
+        self.progress_bar.setValue(100)
+        self._begin_launch(alias, java_path)
+
+    def _on_java_download_failed(self, reason: str) -> None:
+        """下载失败 / 取消：复位按钮；真实失败弹错误提示，取消则静默。"""
+        major = ""
+        if self._java_download_worker is not None:
+            major = str(self._java_download_worker._major)
+        self._reset_launch_button()
+        if reason == "已取消":
+            return
+        fail_box = QMessageBox(self)
+        fail_box.setWindowTitle(C.JAVA_DOWNLOAD_FAILED_TITLE)
+        fail_box.setText(
+            C.JAVA_DOWNLOAD_FAILED_MESSAGE.format(major=major, error=reason)
+        )
+        fail_box.setIcon(QMessageBox.Icon.Warning)
+        fail_box.addButton(
+            C.JAVA_DIALOG_OK_TEXT, QMessageBox.ButtonRole.AcceptRole
+        )
+        fail_box.exec()
+
+    def _reset_launch_button(self) -> None:
+        self._loading = False
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("等待启动")
+        self.launch_button.setEnabled(True)
+        self.launch_button.setText("开始游戏")
 
     def _on_launch_phase(self, percent: int, text: str) -> None:
         """后台启动阶段回调：进度条真实反映环境准备→进程拉起→等待窗口。"""

@@ -119,15 +119,21 @@ def _registry_java_paths() -> list[str]:
     return found
 
 
+def _expand_env(path: str) -> str:
+    """展开 ``%USERPROFILE%`` 等环境变量占位，避免在常量里硬编码用户名。"""
+    return os.path.expandvars(str(path))
+
+
 def _common_dir_java_paths() -> list[str]:
     """扫描常见 JDK 安装目录，返回全部可用 ``java.exe`` 路径；未找到返回空表。"""
     found: list[str] = []
     for base in C.JAVA_SEARCH_DIRS:
-        if not os.path.isdir(base):
+        real = _expand_env(base)
+        if not os.path.isdir(real):
             continue
         try:
-            for entry in sorted(os.listdir(base)):
-                candidate = os.path.join(base, entry, "bin", "java.exe")
+            for entry in sorted(os.listdir(real)):
+                candidate = os.path.join(real, entry, "bin", "java.exe")
                 if os.path.isfile(candidate) and candidate not in found:
                     found.append(candidate)
         except OSError:
@@ -135,10 +141,61 @@ def _common_dir_java_paths() -> list[str]:
     return found
 
 
-def list_java() -> list[dict]:
-    """列出本机全部可用 Java（PATH → 注册表 → 常见目录），按路径去重。
+def _cache_dir_java_paths() -> list[str]:
+    """扫描官方启动器风格的 Java 缓存（子目录名即主版本号，如 17 / 21）。"""
+    found: list[str] = []
+    for base in C.JAVA_CACHE_DIRS:
+        real = _expand_env(base)
+        if not os.path.isdir(real):
+            continue
+        try:
+            for entry in sorted(os.listdir(real)):
+                candidate = os.path.join(real, entry, "bin", "java.exe")
+                if os.path.isfile(candidate) and candidate not in found:
+                    found.append(candidate)
+        except OSError:
+            continue
+    return found
 
-    每项 ``{"path", "version", "source"}``；无可用 Java 时返回空表。供设置页
+
+def _runtime_dir_java_paths() -> list[str]:
+    """扫描云朵自动下载的 Java 运行时目录（``CLY/runtime/java/<主版本>/``）。
+
+    Temurin zip 解压后顶层是带构建号的目录（如 ``jdk8u512-b09-jre``），其下才有
+    ``bin/java.exe``，故在每个主版本目录下同时探测本层与下一层，兼容不同打包结构。
+    """
+    from .resources import data_dir
+
+    root = os.path.join(data_dir(), C.JAVA_RUNTIME_DIR_NAME)
+    found: list[str] = []
+    if not os.path.isdir(root):
+        return found
+    try:
+        for major_entry in os.listdir(root):
+            major_dir = os.path.join(root, major_entry)
+            if not os.path.isdir(major_dir):
+                continue
+            direct = os.path.join(major_dir, "bin", "java.exe")
+            if os.path.isfile(direct):
+                if direct not in found:
+                    found.append(direct)
+                continue
+            try:
+                for inner in os.listdir(major_dir):
+                    candidate = os.path.join(major_dir, inner, "bin", "java.exe")
+                    if os.path.isfile(candidate) and candidate not in found:
+                        found.append(candidate)
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return found
+
+
+def list_java() -> list[dict]:
+    """列出本机全部可用 Java（PATH → 注册表 → 安装目录 → 缓存 → 云朵运行时），按路径去重。
+
+    每项 ``{"path", "version", "major", "source"}``；无可用 Java 时返回空表。供设置页
     「Java 列表」下拉展示与手动选择，未探测到的异常静默兜底为空表。
     """
     candidates: list[dict] = []
@@ -148,17 +205,18 @@ def list_java() -> list[dict]:
         path_probe["source"] = "PATH"
         candidates.append(path_probe)
 
-    for candidate in _registry_java_paths():
-        probe = _probe_java_executable(candidate)
-        if probe:
-            probe["source"] = "registry"
-            candidates.append(probe)
-
-    for candidate in _common_dir_java_paths():
-        probe = _probe_java_executable(candidate)
-        if probe:
-            probe["source"] = "directory"
-            candidates.append(probe)
+    sources = (
+        ("registry", _registry_java_paths()),
+        ("directory", _common_dir_java_paths()),
+        ("cache", _cache_dir_java_paths()),
+        ("runtime", _runtime_dir_java_paths()),
+    )
+    for source, paths in sources:
+        for candidate in paths:
+            probe = _probe_java_executable(candidate)
+            if probe:
+                probe["source"] = source
+                candidates.append(probe)
 
     seen: set[str] = set()
     result: list[dict] = []
@@ -167,6 +225,7 @@ def list_java() -> list[dict]:
         if not key or key in seen:
             continue
         seen.add(key)
+        item["major"] = java_major_version(str(item.get("version") or ""))
         result.append(item)
     return result
 
@@ -181,6 +240,82 @@ def detect_java() -> dict:
         first = detected[0]
         return {"ok": True, "path": first["path"], "version": first["version"], "source": first["source"]}
     return {"ok": False, "path": "", "version": "", "source": "none"}
+
+
+def _missing_java(required: int) -> dict:
+    """构造“缺失所需 Java”的统一返回。"""
+    return {
+        "ok": False,
+        "status": "missing",
+        "path": "",
+        "version": "",
+        "major": 0,
+        "source": "none",
+        "required": required,
+    }
+
+
+def select_java(profile: dict, manual_path: str = "") -> dict:
+    """按版本 profile 声明的 Java 主版本选择本机最匹配的 Java。
+
+    返回 ``{"ok", "status", "path", "version", "major", "required", "source"}``：
+
+    - ``status="ready"``：找到主版本精确匹配的 Java，可直接启动；
+    - ``status="missing"``：本机没有所需主版本，调用方应询问是否自动下载（``required`` 为目标版本）。
+
+    口径：老版本（如 required=8）不用高版本（Java 17/25）硬凑——过新的 JVM 模块 /
+    ServiceLoader 严格性会让老的 launchwrapper 兼容服务直接崩，故找不到精确匹配即判缺失、
+    触发下载。手动指定路径有效时优先尊重，但主版本不匹配仍按缺失处理。
+    """
+    required = required_java_major(profile)
+    available = list_java()
+
+    manual = str(manual_path or "").strip()
+    if manual and os.path.isfile(manual):
+        probe = _probe_java_executable(manual)
+        if probe:
+            major = java_major_version(str(probe.get("version") or ""))
+            if not required or major == required:
+                return {
+                    "ok": True,
+                    "status": "ready",
+                    "path": probe["path"],
+                    "version": probe["version"],
+                    "major": major,
+                    "source": "manual",
+                    "required": required,
+                }
+            # 手动指定但主版本不匹配：如实判缺失，避免老版本被高版本带崩。
+            return _missing_java(required)
+
+    if not required:
+        # 老 profile 未声明 javaVersion：退回默认探测（取第一个），保持历史行为。
+        if available:
+            first = available[0]
+            return {
+                "ok": True,
+                "status": "ready",
+                "path": first["path"],
+                "version": first["version"],
+                "major": first.get("major", 0),
+                "source": first["source"],
+                "required": 0,
+            }
+        return _missing_java(0)
+
+    exact = [item for item in available if item.get("major") == required]
+    if exact:
+        chosen = exact[0]
+        return {
+            "ok": True,
+            "status": "ready",
+            "path": chosen["path"],
+            "version": chosen["version"],
+            "major": chosen["major"],
+            "source": chosen["source"],
+            "required": required,
+        }
+    return _missing_java(required)
 
 
 # --------------------------------------------------------------------------- #
@@ -354,6 +489,21 @@ def _substitute(token: str, variables: dict) -> str:
     return token
 
 
+def _lib_coord_key(lib: dict) -> str:
+    """Maven 坐标归并键：``group:artifact``；带 classifier 时含 classifier。
+
+    用于 classpath 同 artifact 多版本去重（如 vanilla 继承的 log4j 2.8.1 与 Forge
+    引入的 log4j 2.15.0）。无法解析坐标时返回空串，调用方退回以文件路径为键，避免误合并。
+    """
+    parts = str(lib.get("name") or "").split(":")
+    if len(parts) >= 4:
+        # group:artifact:version:classifier：natives 等同 artifact 不同 classifier 需保留。
+        return parts[0].strip() + ":" + parts[1].strip() + ":" + parts[3].strip()
+    if len(parts) >= 2:
+        return parts[0].strip() + ":" + parts[1].strip()
+    return ""
+
+
 def _collect_classpath(profile: dict, alias: str) -> list[str]:
     """收集 classpath：profile libraries 本地存在的 jar + 客户端 Jar + 显式本地 loader Jar。
 
@@ -363,22 +513,43 @@ def _collect_classpath(profile: dict, alias: str) -> list[str]:
     - 客户端 Jar 兼容云朵的 ``client.jar`` 与标准 MC 的 ``<别名>.jar`` 两种命名。
     旧实现只认版本目录内 ``client.jar`` 且只查版本内 libraries，外部版本 classpath
     里既没有主 jar 也没有库，JVM 直接报 ClassNotFoundException: net.minecraft.client.main.Main。
+
+    v1.4.5.0：修复同 artifact 多版本同时进 classpath 导致的 NoSuchMethodError。
+    vanilla 继承的旧库（如 log4j 2.8.1）与加载器引入的新库（如 log4j 2.15.0）GAV
+    版本不同、按完整 name 去重时不会被合并，两个 jar 都进 classpath，JVM 优先加载
+    排在前面的旧版本类，与 modlauncher 期望的 API 不匹配。这里按 ``group:artifact``
+    归并，profile 中后出现的版本覆盖先出现的，并把保留条目移到其最后声明位置。
     """
-    entries: list[str] = []
+    order: list[str] = []
+    chosen: dict[str, str] = {}
+
+    def _absorb(key: str, path: str) -> None:
+        if key in chosen:
+            order.remove(key)
+        order.append(key)
+        chosen[key] = path
+
     for lib in profile.get("libraries") or []:
         if not _rule_allows(lib):
             continue
         explicit = lib.get("_local_jar")
+        path = ""
         if explicit and os.path.isfile(str(explicit)):
-            entries.append(str(explicit))
+            path = str(explicit)
+        else:
+            found = game_dirs.find_library(alias, version_profile.library_relative_path(lib))
+            if found:
+                path = found
+        if not path:
             continue
-        found = game_dirs.find_library(alias, version_profile.library_relative_path(lib))
-        if found:
-            entries.append(found)
+        key = _lib_coord_key(lib) or ("path:" + os.path.normcase(path))
+        _absorb(key, path)
+
     client = game_dirs.find_client_jar(alias)
     if client:
-        entries.append(client)
-    return entries
+        # 客户端主 Jar 用独立键，不与依赖库冲突，保持在 classpath 末尾。
+        _absorb("__client__", client)
+    return [chosen[k] for k in order]
 
 
 def build_launch_command(profile: dict, alias: str, session, config,

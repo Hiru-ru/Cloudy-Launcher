@@ -33,6 +33,7 @@ from ctypes import wintypes
 from PySide6.QtCore import QThread, Signal
 
 from .. import constants as C
+from .. import download_engine
 from .. import game_dirs
 from .. import java_runtime
 from .. import natives_bootstrap
@@ -105,11 +106,14 @@ class LaunchWorker(QThread):
     succeeded = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, alias, session, config, parent=None) -> None:
+    def __init__(self, alias, session, config, parent=None,
+                 preset_java_path: str = "") -> None:
         super().__init__(parent)
         self._alias = alias
         self._session = session
         self._config = config
+        # 主线程已完成 Java 选择 / 下载时直接传入，跳过线程内重复探测。
+        self._preset_java_path = str(preset_java_path or "")
 
     def run(self) -> None:
         self.phase.emit(10, "正在准备游戏环境…")
@@ -130,22 +134,26 @@ class LaunchWorker(QThread):
             return
 
         self.phase.emit(30, "正在检测 Java 环境…")
-        java = java_runtime.resolve_java(self._config.java_path)
-        if not java.get("ok"):
-            self.failed.emit(C.JAVA_MISSING_MESSAGE)
-            return
-
-        # v1.3.1.8：版本 JSON 声明 javaVersion.majorVersion 时，先按主版本比对，
-        # 版本过低直接给明确提示，别让 JVM 抛一行类版本错误或类找不到的误导信息。
-        required_major = java_runtime.required_java_major(profile)
-        current_major = java_runtime.java_major_version(str(java.get("version") or ""))
-        if required_major and current_major and current_major < required_major:
-            self.failed.emit(
-                C.JAVA_VERSION_LOW_MESSAGE.format(
-                    required=required_major, current=current_major, path=java.get("path", "")
+        if self._preset_java_path:
+            probe = java_runtime._probe_java_executable(self._preset_java_path)
+            if not probe:
+                self.failed.emit(
+                    "选定的 Java 已失效，请重新选择或重新下载对应版本。"
                 )
-            )
-            return
+                return
+            java = {
+                "path": probe["path"],
+                "version": probe["version"],
+                "major": java_runtime.java_major_version(probe["version"]),
+            }
+        else:
+            # v1.4.5.1：按 profile 所需主版本精确匹配，不再简单取列表第一个（避免老版本
+            # 误用 Java 25）。正常情况下主线程已处理缺失下载，这里走到 missing 属异常兜底。
+            selection = java_runtime.select_java(profile, self._config.java_path)
+            if selection.get("status") != "ready":
+                self.failed.emit(C.JAVA_MISSING_MESSAGE)
+                return
+            java = selection
 
         # v1.3.2.0：natives 目录为空 / 缺失时，从 natives-windows Jar 自动解压原生库；
         # 本地缺失的 Jar 先下载到全局 libraries。已有原生库则跳过，不重复解压。
@@ -244,3 +252,82 @@ class LaunchWorker(QThread):
         if len(text) > LOG_TAIL_CHARS:
             return "…" + text[-LOG_TAIL_CHARS:]
         return text
+
+
+class JavaDownloadWorker(QThread):
+    """后台下载并安装指定主版本的 Java：下载阶段回传字节百分比，解压阶段单独提示。
+
+    下载在内部子线程执行，本线程轮询 ``ProgressTracker`` 快照推进度，避免界面看不到进度。
+    """
+
+    progress = Signal(int, str)
+    phase = Signal(str)
+    succeeded = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, major, parent=None) -> None:
+        super().__init__(parent)
+        self._major = int(major)
+        self._cancel = False
+
+    def cancel(self) -> None:
+        self._cancel = True
+        self.requestInterruption()
+
+    def _cancel_check(self) -> bool:
+        return self._cancel or self.isInterruptionRequested()
+
+    def run(self) -> None:
+        import threading
+
+        from .. import java_download
+
+        tracker = download_engine.ProgressTracker(total_files=1)
+        box: dict = {}
+
+        def do_download() -> None:
+            try:
+                box["zip"] = java_download.download_zip(
+                    self._major, tracker, self._cancel_check
+                )
+            except InterruptedError:
+                box["canceled"] = True
+            except Exception as exc:  # noqa: BLE001 - 统一回传，线程内不抛
+                box["download_error"] = exc
+
+        thread = threading.Thread(target=do_download)
+        thread.start()
+        last_pct = -1
+        while thread.is_alive():
+            snapshot = tracker.snapshot()
+            total = snapshot.total_bytes
+            done = snapshot.done_bytes
+            if total > 0:
+                pct = max(0, min(99, int(done * 100 / total)))
+                if pct != last_pct:
+                    self.progress.emit(
+                        pct, C.JAVA_DOWNLOADING_TEXT.format(major=self._major)
+                    )
+                    last_pct = pct
+            self.msleep(200)
+        thread.join()
+
+        if box.get("canceled"):
+            self.failed.emit("已取消")
+            return
+        if "download_error" in box:
+            self.failed.emit(str(box["download_error"]))
+            return
+
+        self.phase.emit(C.JAVA_EXTRACTING_TEXT.format(major=self._major))
+        try:
+            java_path = java_download.extract_zip(
+                self._major, box["zip"], self._cancel_check
+            )
+        except InterruptedError:
+            self.failed.emit("已取消")
+            return
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+            return
+        self.succeeded.emit(java_path)

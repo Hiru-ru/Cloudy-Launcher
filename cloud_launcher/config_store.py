@@ -102,6 +102,9 @@ DEFAULT_CONFIG = {
     # ---- v1.4.1.0：桌宠（独立 APP 经设置页文件选择导入）----
     # 导入的桌宠可执行文件绝对路径；空串表示尚未导入，未导入不可启用。
     "pet_app_path": "",
+    # ---- 小云 AI（独立程序经设置·AI 页导入）----
+    # 导入的小云 AI 可执行文件绝对路径；空串表示尚未导入，未导入不可翻译。
+    "ai_app_path": "",
     # 上次桌宠窗口位置（关闭时回填，下次启动恢复）；None 由桌宠程序自行放右下角。
     "pet_window_x": None,
     "pet_window_y": None,
@@ -233,6 +236,8 @@ class ConfigStore:
             # 仅做类型校正；窗口坐标非整数回退 None。
             if not isinstance(self._data.get("pet_app_path"), str):
                 self._data["pet_app_path"] = ""
+            if not isinstance(self._data.get("ai_app_path"), str):
+                self._data["ai_app_path"] = ""
             for key in ("pet_window_x", "pet_window_y"):
                 value = self._data.get(key)
                 if value is not None:
@@ -478,6 +483,15 @@ class ConfigStore:
     @pet_app_path.setter
     def pet_app_path(self, value: str) -> None:
         self.set("pet_app_path", str(value or "").strip())
+
+    # ---- 小云 AI ----
+    @property
+    def ai_app_path(self) -> str:
+        return str(self.get("ai_app_path", "") or "")
+
+    @ai_app_path.setter
+    def ai_app_path(self, value: str) -> None:
+        self.set("ai_app_path", str(value or "").strip())
 
     @property
     def pet_window_x(self):

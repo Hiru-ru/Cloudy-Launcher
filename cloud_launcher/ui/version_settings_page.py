@@ -63,6 +63,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import constants as C
+from .. import ai_controller
 from .. import game_dirs
 from .. import java_runtime
 from .. import version_content
@@ -70,6 +71,7 @@ from .. import version_meta
 from ..resources import resource_path
 from ..version_launch_config import VersionLaunchConfig
 from .card_widget import Card
+from .appearance import appearance
 from .content_scan_worker import ContentScanWorker
 from .frosted_backdrop import capture_live_backdrop
 from .launch_settings_page import (
@@ -1066,6 +1068,20 @@ class VersionSettingsPage(QWidget):
         delete.clicked.connect(self._delete_version)
         row.addWidget(delete, 1)
         card.add_layout(row)
+
+        # AI 翻译入口只放在概览「高级设置」卡（按用户要求，设置分区不再放 AI）。
+        self._ai_translate_btn = QPushButton("AI 翻译（本地离线）")
+        self._ai_translate_btn.setProperty("modeButton", True)
+        self._ai_translate_btn.setFixedHeight(_ROW_HEIGHT)
+        self._ai_translate_btn.setCursor(Qt.PointingHandCursor)
+        self._ai_translate_btn.clicked.connect(self._on_ai_translate)
+        card.add_widget(self._ai_translate_btn)
+        ai_hint = QLabel(
+            "扫描本版本 mod / 材质包 / 整合包的英文语言文件，生成可在游戏内启用的汉化"
+            "资源包；已有中文自动跳过。须先在「设置 · AI」导入小云 AI。")
+        ai_hint.setProperty("vsHint", True)
+        ai_hint.setWordWrap(True)
+        card.add_widget(ai_hint)
         return card
 
     # ---------- 设置（骨架） ---------- #
@@ -1812,6 +1828,30 @@ class VersionSettingsPage(QWidget):
             self._config.save()
         game_dirs.remove_version_dir(self._alias)
         self.closed.emit()
+
+    # ---------- AI 翻译 ---------- #
+    def _on_ai_translate(self) -> None:
+        """检查小云 AI 导入状态后，拉起独立程序针对当前版本翻译。"""
+        if not self._alias:
+            self._show_message("未确定当前版本，无法进行 AI 翻译。")
+            return
+        app_path = self._config.ai_app_path if self._config else ""
+        if not app_path or not os.path.isfile(app_path):
+            self._show_message(
+                "尚未导入小云 AI，无法翻译。请先到「设置 · AI」导入小云 AI 程序。")
+            return
+        vdir = game_dirs.version_dir(self._alias)
+        out_dir = os.path.join(vdir, "resourcepacks")
+        os.makedirs(out_dir, exist_ok=True)
+        # 启动器主窗口全局几何，供小云 AI 把卡片居中到启动器正中央。
+        g = self.window().geometry()
+        anchor = (g.x(), g.y(), g.width(), g.height())
+        try:
+            ai_controller.launch_ai(
+                app_path, game_dir=vdir, output_dir=out_dir,
+                theme=appearance.glass_mode, anchor=anchor)
+        except OSError as exc:
+            self._show_message(f"小云 AI 启动失败：{exc}")
 
     # ---------- 工具 ---------- #
     def _show_message(self, message: str) -> None:

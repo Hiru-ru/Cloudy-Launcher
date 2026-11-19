@@ -17,15 +17,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""About page: brand strip + feedback card + release notes.
+"""About page: brand strip + feedback card + release notes + acknowledgements.
 
-按手绘线框上下三块：
+按手绘线框上下四块：
 
 1. 顶部品牌横条卡：左侧 Logo，右侧名称与版本号；Logo / 名称的显隐仍跟随
    设置页个性化开关（:mod:`brand`），版本号始终展示。
 2. 「问题反馈」卡：写明作者反馈 QQ（:data:`constants.AUTHOR_QQ`），号码可
    鼠标选中复制，遇到问题或 Bug 可加此号联系作者。
 3. 下方「本版本介绍」卡：逐条列出 :data:`constants.ABOUT_RELEASE_NOTES`。
+4. 底部「致谢」卡：以小字号列出 :data:`constants.ACK_NOTES`，感谢 DeepSeek
+   大模型与 DeepSeek 团队，并标注机器翻译免责。
 
 品牌名 / 版本号沿用英文口径；介绍正文为中文。纯 PySide6 + 标准库。
 """
@@ -70,6 +72,7 @@ class AboutPage(QWidget):
         self._build_brand_card()
         self._build_feedback_card()
         self._build_notes_card()
+        self._build_ack_card()
         self._list_layout.addStretch(1)
 
         scroll.setWidget(list_widget)
@@ -146,6 +149,19 @@ class AboutPage(QWidget):
             lab.setProperty("fieldLabel", True)
             card.add_widget(lab)
             self._note_labels.append(lab)
+        self._list_layout.addWidget(card)
+
+    def _build_ack_card(self) -> None:
+        """小字体致谢卡：小云 AI 所用模型与开源团队，字号小于正文，低调列出。"""
+        card = Card(C.ACK_TITLE)
+        for item in C.ACK_NOTES:
+            lab = QLabel(item)
+            lab.setWordWrap(True)
+            lab.setStyleSheet(
+                f"font-size: 11px; color: {C.COLOR_TEXT_LIGHT}; "
+                "background: transparent;"
+            )
+            card.add_widget(lab)
         self._list_layout.addWidget(card)
 
     # ------------------------------------------------------------------ #
